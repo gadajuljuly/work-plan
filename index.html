@@ -138,6 +138,17 @@ details.smart summary{cursor:pointer;color:var(--brand)}
 .lock{display:inline-grid;place-items:center;width:38px;height:38px;padding:0;border-radius:50%}
 body.adminmode .lock{background:var(--brand);color:#fff;border-color:var(--brand)}
 .vobanner{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--warn-soft);color:var(--ink);border:1px solid var(--warn);border-radius:10px;padding:10px 14px;margin-bottom:14px}
+
+.aiw{position:relative;display:block}
+.aib{position:absolute;bottom:6px;left:6px;width:28px;height:28px;padding:0;border-radius:50%;font-size:14px;line-height:1;background:var(--card);border-color:var(--line);opacity:.55;transition:opacity .15s;z-index:1}
+.aiw:hover .aib,.aib:focus{opacity:1}
+.aib:hover{border-color:var(--brand);box-shadow:0 1px 4px rgba(0,0,0,.15)}
+.aiw input{padding-left:38px}
+.aiw input~.aib{top:50%;bottom:auto;transform:translateY(-50%);width:26px;height:26px}
+.xplan .aib{background:#fff;color:#000;border-color:#9db3d3}
+.xplan .aiw textarea{padding-bottom:30px}
+.aibusy{opacity:.5}
+.toast .undo{margin-right:8px;padding:2px 10px;font-size:13px}
 </style>
 </head>
 <body>
@@ -370,6 +381,7 @@ function renderView(){
   if(!S){v.innerHTML=`<div class="card welcome"><h2>ברוכים הבאים</h2><p class="lead">האפליקציה מלווה את התהליך מהמיפוי ועד תכנית העבודה:<br>היערכות ← מיפוי וניקוד ← תמונת מצב ובחירת היגדים ← תכנית עבודה ← בדיקת הלימה.</p><button class="primary" onclick="askNewSchool()">+ התחלת מיפוי לבית ספר חדש</button></div>`;return}
   v.innerHTML=banner+{prep:viewPrep,map:viewMap,snap:viewSnap,plan:viewPlan,align:viewAlign}[tab]();
   if(viewOnly){v.querySelectorAll("textarea,input[type=text],input:not([type])").forEach(x=>x.readOnly=true);v.querySelectorAll("select,input[type=checkbox]").forEach(x=>x.disabled=true);v.querySelectorAll("#addPrep,#addPrepEx,[data-delprep],[data-addcustom],[data-delcustom],#addPlan,[data-addsub],[data-delrow],[data-reset],#delSchool,#unhide,#toPlan").forEach(x=>x.style.display="none")}
+  decorateAI(v);
   if(tab==="plan")autosize(v);
 }
 
@@ -688,6 +700,60 @@ function viewGuide(){
   </div>`;
 }
 
+/* ---------- AI fill (✨) for free-text fields – via the "ai-fill" server function (Gemini) ---------- */
+function aiOn(){return remoteOn&&!viewOnly}
+function schoolContext(){
+  const lines=[`בית הספר: ${S.name||""}${S.year?" ("+S.year+")":""}`];
+  CORE.forEach(z=>{
+    const it=allOutcomes(S).filter(o=>o.zone===z&&isScored(o));
+    if(it.length||(S.zoneCh[z]||"").trim())lines.push(`\nזירה: ${ZONES[z]}`);
+    it.forEach(o=>{const m=S.map[o.id]||{};lines.push(`- [${o.comp}] ${o.text} | ניקוד: ${scoreText(o)}${m.evidence?" | עדויות: "+m.evidence:""}${m.selected?" | נבחר לתכנית":""}`)});
+    if((S.zoneCh[z]||"").trim())lines.push(`אתגרים מרכזיים בזירה: ${S.zoneCh[z]}`);
+  });
+  const sn=[["strengths","כוחות"],["gaps","פערים"],["meaningful","פערים משמעותיים"],["routines","סדירויות קיימות"],["practices","פרקטיקות להרחבה"]].filter(([k])=>(S.snap[k]||"").trim());
+  if(sn.length){lines.push("\nתמונת מצב:");sn.forEach(([k,l])=>lines.push(`${l}: ${S.snap[k]}`))}
+  return lines.join("\n").slice(0,9000);
+}
+function stmtFocus(o){const m=S.map[o.id]||{};return `היגד: ${o.text}\nזירה: ${ZONES[o.zone]} · רכיב: ${o.comp}\nניקוד: ${scoreText(o)||"טרם נוקד"}${m.tools?"\nכלי איסוף: "+m.tools:""}${m.sources?"\nמקורות: "+m.sources:""}${m.evidence?"\nעדויות: "+m.evidence:""}`}
+function fieldInfo(el){
+  const d=el.dataset;
+  if(d.prep!==undefined){const r=S.prep[+d.prep]||{};const o=outcomeById(S,r.stmt);const L={info:"איזה מידע דרוש?",source:"ממי או מאיפה נקבל את המידע?",tool:"כלי האיסוף",who:"מי אוסף?",due:"עד מתי?"};
+    return {field:"תכנון איסוף מידע למיפוי – "+L[d.k],guide:"שורה בטבלת היערכות למיפוי: לכל היגד מגדירים איזה מידע דרוש, ממי, באיזה כלי (תצפית, ריאיון, קבוצת מיקוד, שאלון, ניתוח מסמכים), מי אוסף (מלווה, מאמנת, מנחה) ועד מתי. תשובה קצרה של שורה אחת.",focus:(o?stmtFocus(o):"[לא נבחר היגד]")+`\nשאר השורה: ${Object.entries(L).filter(([k])=>k!==d.k&&r[k]).map(([k,l])=>l+" "+r[k]).join(" | ")}`}}
+  if(d.map){const o=outcomeById(S,d.map);const L={evidence:"עדויות – מה מצאנו בפועל",tools:"כלי איסוף הנתונים",sources:"מקורות / מסמכים שנבדקו"};
+    return {field:"מיפוי – "+L[d.k],guide:d.k==="evidence"?"נסח את הממצאים בצורה קונקרטית ועניינית (לדוגמה: בשלושה מארבעת הפרוטוקולים לא תועדה החלטה פדגוגית). השתמש רק במה שכתוב; אם אין ממצאים, כתוב תבנית עם [להשלים] שמראה אילו ממצאים כדאי לתעד.":"רשימה קצרה מופרדת בפסיקים, המתאימה לבדיקת ההיגד.",focus:o?stmtFocus(o):""}}
+  if(d.zonech!==undefined){const z=+d.zonech;return {field:"אתגרים מרכזיים בזירה: "+ZONES[z],guide:"סכם בכמה משפטים את הפערים המרכזיים שעולים מהניקוד ומהעדויות בזירה זו.",focus:allOutcomes(S).filter(o=>o.zone===z&&isScored(o)).map(stmtFocus).join("\n\n")||"אין עדיין ניקוד בזירה זו"}}
+  if(d.snap){const Q={partners:"שותפים לתהליך המיפוי",strengths:"מהם הכוחות שעליהם אפשר להישען?",gaps:"מהם הפערים המרכזיים?",missing:"האם יש מידע שחסר לנו?",meaningful:"אילו פערים משמעותיים לתהליך השינוי, ולא רק נמוכים מבחינה מספרית?",routines:"אילו סדירויות כבר קיימות?",practices:"אילו פרקטיקות טובות אפשר להרחיב?"};
+    return {field:Q[d.snap]||d.snap,guide:d.snap==="partners"?"מי צריך להיות שותף בכל זירה (מנהל, מלווה, מאמנת, מנחה, מנהיגות ביניים, בעלי תפקידים, מדגם מורים, יועצת, תלמידים).":"תשובה של 2–5 שורות המבוססת על נתוני המיפוי.",focus:""}}
+  if(d.cell){const r=S.plan.find(x=>x.id===d.cell);const o=r&&outcomeById(S,r.outcome);const lbl=(PF.find(x=>x[0]===d.k)||[0,d.k])[1];const c=cfg();
+    return {field:"תכנית עבודה – "+lbl,guide:PDESC[d.k]+(d.k==="goal"?` דוגמה: עד סוף מאי, ב־80% מישיבות צוות השפה יתקיים ניתוח של תוצרי תלמידים, ובעקבותיו תיקבע ותתועד פעולה פדגוגית להמשך. מועד היעד בתכנית: ${c.end}.`:"")+(d.k==="timeline"?` תקופת ביצוע: ${c.period}; נקודות בקרה: ${c.checks}.`:""),
+      focus:(o?"תוצאה רצויה: "+o.text+"\n"+stmtFocus(o):"[לא נבחרה תוצאה]")+"\n\nשאר השורה בתכנית:\n"+PF.filter(([k])=>k!==d.k).map(([k,l])=>`${l}: ${val(r,k)||"(ריק)"}`).join("\n")}}
+  if(d.alignnote){const q=(el.closest(".check")||{}).textContent||"";return {field:"בדיקת הלימה – הערה לשאלה: "+q.trim().slice(0,120),guide:"הערה קצרה שבוחנת את התכנית מול השאלה, כולל הצעה לתיקון אם צריך.",focus:planAOA().slice(1).map(r=>r.join(" | ")).join("\n").slice(0,4000)}}
+  return null;
+}
+function decorateAI(root){
+  if(!aiOn())return;
+  root.querySelectorAll("textarea[data-prep],textarea[data-map],input[data-map],textarea[data-zonech],textarea[data-snap],textarea[data-cell],input[data-alignnote],textarea[data-alignnote]").forEach(el=>{
+    if(el.readOnly||el.parentElement.classList.contains("aiw"))return;
+    const w=document.createElement("span");w.className="aiw";el.parentNode.insertBefore(w,el);w.appendChild(el);
+    const b=document.createElement("button");b.type="button";b.className="aib";b.title="מילוי בעזרת בינה מלאכותית";b.textContent="✨";w.appendChild(b);
+  });
+}
+async function aiFill(btn){
+  const el=btn.parentElement.querySelector("textarea,input");if(!el||!S)return;
+  const info=fieldInfo(el);if(!info)return;
+  const prev=el.value;btn.disabled=true;btn.textContent="⏳";el.classList.add("aibusy");
+  try{
+    const r=await fetch(REMOTE.url.replace(/\/$/,"")+"/functions/v1/ai-fill",{method:"POST",headers:Object.assign({apikey:REMOTE.key,"Content-Type":"application/json"},REMOTE.key.startsWith("eyJ")?{Authorization:"Bearer "+REMOTE.key}:{}),
+      body:JSON.stringify({field:info.field,guide:info.guide,focus:info.focus,context:schoolContext(),current:prev})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok||!j.text){toast(j.error==="rate_limit"?"הגעתם למגבלת השימוש החינמית – נסו שוב בעוד דקה":j.error==="missing_key"?"הבינה המלאכותית עדיין לא הוגדרה בשרת":"הבינה המלאכותית לא זמינה כרגע, נסו שוב");return}
+    el.value=j.text;el.dispatchEvent(new Event("input",{bubbles:true}));
+    toastUndo("הטקסט מולא בעזרת בינה מלאכותית – כדאי לעבור עליו",()=>{el.value=prev;el.dispatchEvent(new Event("input",{bubbles:true}))});
+  }catch(e){toast("אין חיבור לבינה המלאכותית כרגע")}
+  finally{btn.disabled=false;btn.textContent="✨";el.classList.remove("aibusy")}
+}
+function toastUndo(msg,undo){const t=document.createElement("div");t.className="toast";t.innerHTML=`${esc(msg)} <button class="undo">ביטול</button>`;t.querySelector("button").onclick=()=>{undo();t.remove()};document.body.appendChild(t);setTimeout(()=>t.remove(),7000)}
+
 /* ---------- Admin: view all users' data (password checked on the server) ---------- */
 const admin={on:false,pw:"",rows:[],q:"",loading:false,err:""};
 let viewOnly=null, ownState=null;
@@ -820,6 +886,7 @@ document.addEventListener("click",e=>{
   const t=e.target.closest("button,[data-toggle]");if(!t)return;const d=t.dataset;
   if(d.tab){tab=d.tab;renderTabs();renderView();scrollTo(0,0);return}
   if(t.id==="newSchool")return askNewSchool();
+  if(t.classList.contains("aib"))return aiFill(t);
   if(t.closest("#lockBtn"))return admin.on?exitAdmin():askAdmin();
   if(t.id==="adminExit")return exitAdmin();
   if(t.id==="adminRefresh"){loadAdmin(admin.pw).then(ok=>{renderView();if(!ok)toast(admin.err)});return}
