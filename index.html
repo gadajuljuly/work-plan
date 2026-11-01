@@ -304,6 +304,10 @@ async function syncPending(){
 let schools={};        // id -> {name,year,updatedAt}
 let curId=null, S=null; // current school data
 let tab="prep";
+/* remember where the user was (tab, zone, open statements) so a refresh returns to the same place */
+function uiLoad(){try{return JSON.parse(localStorage.getItem("mapplan.ui")||"{}")}catch(e){return {}}}
+function uiSave(){try{localStorage.setItem("mapplan.ui",JSON.stringify({tab,mapZone,open:[...openStmts]}))}catch(e){}}
+{const u=uiLoad();if(u.tab&&["prep","map","snap","plan","align","guide"].includes(u.tab))tab=u.tab}
 let dirty=false, saving=false, lastEdit=0, saveTimer=null;
 
 function setStatus(t){$("#saveStatus").textContent=t}
@@ -421,6 +425,7 @@ function renderTabs(){
 }
 function renderAll(){renderHeader();renderTabs();renderView()}
 function renderView(){
+  uiSave();
   const v=$("#view");v.classList.toggle("wide",tab==="plan"||admin.on&&!viewOnly);
   document.body.classList.toggle("adminmode",admin.on);
   if(admin.on&&!viewOnly){$("#tabs").style.display="none";v.innerHTML=viewAdmin();return}
@@ -463,7 +468,7 @@ function viewPrep(){
 }
 
 /* ---------- 2. Mapping ---------- */
-let mapZone=0;
+let mapZone=(()=>{const z=uiLoad().mapZone;return z===1||z===2?z:0})();
 function viewMap(){
   const all=allOutcomes(S);const scored=all.filter(isScored).length;
   let html=`<div class="card"><h2>כלי המיפוי – ניקוד ותיעוד עדויות</h2>
@@ -508,7 +513,7 @@ function stmtCard(o){
     ${o.custom?`<button class="ghost danger" data-delcustom="${o.id}">מחיקת מרכיב זה</button>`:""}
    </div></div>`;
 }
-const openStmts=new Set();
+const openStmts=new Set(uiLoad().open||[]);
 
 /* ---------- 3. Snapshot & selection ---------- */
 function viewSnap(){
@@ -1110,7 +1115,7 @@ document.addEventListener("click",e=>{
   if(t.id==="backAdmin"){viewOnly=null;S=null;curId=null;renderAll();return}
   if(t.id==="exportBtn")return exportXlsx();
   if(!S)return;
-  if(d.toggle){const el=t.closest(".stmt");el.classList.toggle("open");el.classList.contains("open")?openStmts.add(d.toggle):openStmts.delete(d.toggle);return}
+  if(d.toggle){const el=t.closest(".stmt");el.classList.toggle("open");el.classList.contains("open")?openStmts.add(d.toggle):openStmts.delete(d.toggle);uiSave();return}
   if(t.id==="expandAll"){allOutcomes(S).forEach(o=>openStmts.add(o.id));renderView();return}
   if(t.id==="collapseAll"){openStmts.clear();renderView();return}
   if(d.mapzone){mapZone=+d.mapzone;renderView();return}
