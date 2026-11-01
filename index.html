@@ -184,6 +184,12 @@ body.remote #delSchool{display:none}
 @media (max-width:760px){.sumhead .sh0{display:none}}
 
 .dot.na{background:transparent;border:1px dashed var(--line);color:var(--muted);font-size:10px;font-weight:500}
+
+.cmptbl td{font-size:13.5px;min-width:110px}
+.cmptbl td:first-child{min-width:130px}
+.cmptbl tbody tr:nth-child(even) td{background:var(--bg)}
+.ztag{font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px;color:#fff;background:#5b4bc4;white-space:nowrap}
+.ztag.zt1{background:#f5c400;color:#3d2e00}.ztag.zt2{background:#c2580a}.ztag.zt-1{display:none}
 </style>
 </head>
 <body>
@@ -994,7 +1000,7 @@ async function aiFill(btn){
 function toastUndo(msg,undo){document.querySelectorAll(".toast").forEach(x=>x.remove());const t=document.createElement("div");t.className="toast";t.innerHTML=`${esc(msg)} <button class="undo">ביטול</button>`;t.querySelector("button").onclick=()=>{undo();t.remove()};document.body.appendChild(t);setTimeout(()=>t.remove(),7000)}
 
 /* ---------- Admin: view all users' data (password checked on the server) ---------- */
-const admin={on:false,pw:"",rows:[],q:"",loading:false,err:""};
+const admin={on:false,pw:"",rows:[],q:"",loading:false,err:"",view:"schools",cmpZone:"all",cmpQ:""};
 let viewOnly=null, ownState=null;
 function fmtDate(t){if(!t)return "";const d=new Date(t);return isNaN(d)?"":d.toLocaleDateString("he-IL")+" "+d.toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"})}
 function askAdmin(){
@@ -1042,33 +1048,79 @@ function viewAdmin(){
   const groups={};rows.forEach(r=>{const k=norm(r.school_name)||"ללא שם";(groups[k]=groups[k]||[]).push(r)});
   const names=Object.keys(groups).sort((a,b)=>a.localeCompare(b,"he"));
   return `<div class="card adminhead"><div class="row"><h2 style="margin:0">🔓 מצב מנהל</h2><span class="grow"></span>
-    <button id="adminRefresh">רענון</button><button id="adminExportAll" class="primary">ייצוא ריכוז ל-Excel</button><button id="adminExit">יציאה ממצב מנהל</button></div>
+    <button data-adminview="schools" class="${admin.view==="schools"?"primary":""}">בתי ספר</button><button data-adminview="compare" class="${admin.view==="compare"?"primary":""}">השוואת תכניות</button><span style="width:12px"></span><button id="adminRefresh">רענון</button><button id="adminExportAll" class="primary">ייצוא ריכוז ל-Excel</button><button id="adminExit">יציאה ממצב מנהל</button></div>
     <p class="lead" style="margin-top:8px">${store.mode==="remote"?`${admin.rows.length} בתי ספר. כאן מוסיפים בתי ספר וקובעים להם סיסמה, וצופים בנתונים של כל אחד מהם.`:`${admin.rows.length} רשומות · ${names.length} בתי ספר. רשומות עם אותו שם בית ספר מקובצות יחד.`}</p>
-    <input id="adminQ" placeholder="חיפוש לפי שם בית ספר או שנה…" value="${esc(admin.q)}" style="max-width:420px"></div>
-   ${store.mode==="remote"?viewSchoolAdmin():""}
-   ${names.length?names.map(n=>`<div class="card"><h3>${esc(n)} <span class="pill">${groups[n].length} ${groups[n].length>1?"רשומות":"רשומה"}</span></h3>
+    ${admin.view==="compare"?"":`<input id="adminQ" placeholder="חיפוש לפי שם בית ספר או שנה…" value="${esc(admin.q)}" style="max-width:420px">`}</div>
+   ${admin.view==="compare"?viewCompare():(store.mode==="remote"?viewSchoolAdmin():"")}
+   ${admin.view==="compare"?"":names.length?names.map(n=>`<div class="card"><h3>${esc(n)} <span class="pill">${groups[n].length} ${groups[n].length>1?"רשומות":"רשומה"}</span></h3>
      <div class="tablewrap"><table><thead><tr><th>שנה</th><th>עדכון אחרון</th><th>מיפוי</th><th>היגדים שנבחרו</th><th>שורות בתכנית</th><th></th></tr></thead><tbody>
      ${groups[n].map(r=>{const s=statsOf(r.data||{});return `<tr><td>${esc(r.school_year)||"–"}</td><td>${fmtDate(r.updated_at)}</td>
        <td><div class="row"><div class="bar" style="max-width:120px"><i style="width:${s.total?s.scored/s.total*100:0}%"></i></div><span class="status">${s.scored}/${s.total}</span></div></td>
        <td>${s.sel}</td><td>${s.plan}</td><td class="row" style="flex-wrap:nowrap"><button data-viewrow="${esc(r.id)}">צפייה</button>${store.mode==="remote"?`<button class="primary" data-editrow="${esc(r.id)}">פתיחה לעריכה</button>`:""}</td></tr>`}).join("")}
      </tbody></table></div></div>`).join(""):`<div class="card empty">${admin.rows.length?"אין תוצאות לחיפוש":"עדיין לא נשמרו נתונים בשרת"}</div>`}`;
 }
+/* ---------- Admin: compare plans across schools ---------- */
+// Plan rows of one school, computed without touching the open school or saving anything
+function planRowsOf(r){
+  const keep=S;
+  try{
+    S=normalize(structuredClone(r.data||{}));S.name=r.school_name;S.year=r.school_year;
+    migratePlan();
+    const src=planSource().list.map(o=>o.id);
+    S.plan=S.plan.filter(x=>!(x.auto&&!src.includes(x.outcome)&&!Object.keys(x.ov||{}).length));
+    src.forEach(id=>{if(!S.plan.some(x=>x.outcome===id))S.plan.push({id:"a"+id,outcome:id,auto:true,ov:{}})});
+    const out=[];
+    planGroups().forEach(g=>{const o=outcomeById(S,g.outcome);
+      g.rows.forEach(row=>{const f={};PF.forEach(([k])=>f[k]=val(row,k)||"");
+        out.push(Object.assign(f,{school:r.school_name,year:r.school_year,schoolId:r.id,outcome:g.outcome||"",outcomeText:o?o.text:"",zoneIdx:o?o.zone:-1,comp:o?o.comp:"",baseline:o?scoreText(o):"",edited:!row.auto||Object.keys(row.ov||{}).length>0}))})});
+    return out;
+  }finally{S=keep}
+}
+function compareGroups(){
+  const all=admin.rows.flatMap(planRowsOf);
+  const z=admin.cmpZone??"all",q=(admin.cmpQ||"").trim();
+  const rows=all.filter(x=>(z==="all"||String(x.zoneIdx)===z)&&(!q||[x.school,x.outcomeText,x.goal,x.measure,x.action,x.owner].some(t=>(t||"").includes(q))));
+  const map=new Map();
+  rows.forEach(x=>{const k=x.outcome||"_"+x.outcomeText;if(!map.has(k))map.set(k,{text:x.outcomeText||"(ללא תוצאה)",zoneIdx:x.zoneIdx,comp:x.comp,rows:[]});map.get(k).rows.push(x)});
+  const groups=[...map.values()].map(g=>Object.assign(g,{schools:new Set(g.rows.map(r=>r.schoolId)).size}));
+  groups.sort((a,b)=>b.schools-a.schools||a.zoneIdx-b.zoneIdx);
+  return {groups,total:all.length,schoolsWithPlan:new Set(all.map(r=>r.schoolId)).size};
+}
+function viewCompare(){
+  const {groups,total,schoolsWithPlan}=compareGroups();
+  const zbtn=(v,l)=>`<button data-cmpzone="${v}" class="${(admin.cmpZone??"all")===v?"primary":""}">${l}</button>`;
+  return `<div class="card"><h3>השוואת תכניות בין בתי ספר</h3>
+    <p class="lead">${schoolsWithPlan} מתוך ${admin.rows.length} בתי ספר עם תכנית · ${groups.length} תוצאות רצויות · ${total} שורות. התוצאות ממוינות לפי מספר בתי הספר שבחרו בהן. שורה שעדיין לא נערכה ידנית מסומנת "הצעה אוטומטית".</p>
+    <div class="row" style="margin-bottom:8px">${zbtn("all","כל הזירות")}${CORE.map(z=>zbtn(String(z),"זירה "+(z+1)+": "+ZONES[z])).join("")}</div>
+    <input id="cmpQ" placeholder="חיפוש בשם בית ספר, יעד, מדד, פעולה…" value="${esc(admin.cmpQ||"")}" style="max-width:420px"></div>
+   ${groups.length?groups.map(g=>`<div class="card cmpgroup">
+     <div class="row"><span class="ztag zt${g.zoneIdx}">${g.zoneIdx>=0?"זירה "+(g.zoneIdx+1):""}</span><h3 style="margin:0;flex:1">${esc(g.text)}</h3><span class="pill brand">${g.schools} ${g.schools===1?"בית ספר":"בתי ספר"}</span></div>
+     ${g.comp?`<div class="status" style="margin:2px 0 8px">${esc(g.comp)}</div>`:""}
+     <div class="tablewrap"><table class="cmptbl"><thead><tr><th>בית ספר</th><th>נקודת מוצא</th><th>יעד</th><th>כלי ומדד</th><th>פעולה</th><th>לוח זמנים</th><th>אחראי</th></tr></thead><tbody>
+     ${g.rows.map(r=>`<tr><td><b>${esc(r.school)}</b>${r.edited?"":`<div class="status">הצעה אוטומטית</div>`}</td><td class="status">${esc(r.baseline)}</td><td>${esc(r.goal)}</td><td>${esc(r.measure)}</td><td>${esc(r.action)}</td><td>${esc(r.timeline)}</td><td>${esc(r.owner)}</td></tr>`).join("")}
+     </tbody></table></div></div>`).join(""):`<div class="card empty">אין תכניות להצגה${admin.cmpQ?" לחיפוש הזה":""}</div>`}`;
+}
+
 async function exportAllXlsx(){
   if(!window.XLSX){toast("רכיב הייצוא עדיין נטען, נסו שוב");return}
   const keep=S;const wb=XLSX.utils.book_new();wb.Workbook={Views:[{RTL:true}]};
   const head=["בית ספר","שנה","עדכון אחרון","מס'","תוצאה רצויה מתוך כלי המיפוי"].concat(PF.map(x=>x[1]));const out=[head];
   const sum=[["בית ספר","שנה","עדכון אחרון","היגדים שנוקדו","היגדים שנבחרו","שורות בתכנית"]];
   admin.rows.slice().sort((a,b)=>(a.school_name||"").localeCompare(b.school_name||"","he")).forEach(r=>{
-    S=structuredClone(r.data||{});["prep","plan","custom"].forEach(k=>S[k]=S[k]||[]);["map","snap","zoneCh","align"].forEach(k=>S[k]=S[k]||{});
-    syncPlan();const st=statsOf(S);sum.push([r.school_name,r.school_year,fmtDate(r.updated_at),st.scored+"/"+st.total,st.sel,st.plan]);
-    let n=0;planGroups().forEach(g=>{n++;const o=outcomeById(S,g.outcome);g.rows.forEach(row=>out.push([r.school_name,r.school_year,fmtDate(r.updated_at),n,o?o.text:""].concat(PF.map(([k])=>val(row,k)||""))))});
+    const st=statsOf(normalize(structuredClone(r.data||{})));sum.push([r.school_name,r.school_year,fmtDate(r.updated_at),st.scored+"/"+st.total,st.sel,st.plan]);
+    let n=0,last=null;planRowsOf(r).forEach(x=>{if(x.outcome!==last){n++;last=x.outcome}out.push([r.school_name,r.school_year,fmtDate(r.updated_at),n,x.outcomeText].concat(PF.map(([k])=>x[k])))});
   });
+  const cmp=[["תוצאה רצויה","זירה","מס' בתי ספר","בית ספר","נקודת מוצא","יעד","כלי ומדד","פעולה","לוח זמנים","אחראי"]];
+  const keepView=[admin.cmpZone,admin.cmpQ];admin.cmpZone="all";admin.cmpQ="";
+  compareGroups().groups.forEach(g=>g.rows.forEach(x=>cmp.push([g.text,g.zoneIdx>=0?"זירה "+(g.zoneIdx+1):"",g.schools,x.school,x.baseline,x.goal,x.measure,x.action,x.timeline,x.owner])));
+  [admin.cmpZone,admin.cmpQ]=keepView;
   S=keep;
   const hs={fill:{patternType:"solid",fgColor:{rgb:"2E75B6"}},font:{bold:true,color:{rgb:"FFFFFF"}},alignment:{wrapText:true,vertical:"center",horizontal:"center",readingOrder:2}};
   const cs={alignment:{wrapText:true,vertical:"top",horizontal:"right",readingOrder:2}};
   const mk=(aoa,w)=>{const ws=XLSX.utils.aoa_to_sheet(aoa);ws["!cols"]=w.map(x=>({wch:x}));const rg=XLSX.utils.decode_range(ws["!ref"]);for(let R=0;R<=rg.e.r;R++)for(let C=0;C<=rg.e.c;C++){const a=XLSX.utils.encode_cell({r:R,c:C});if(ws[a])ws[a].s=R?cs:hs}return ws};
   XLSX.utils.book_append_sheet(wb,mk(sum,[30,12,18,14,14,14]),"ריכוז בתי ספר");
   XLSX.utils.book_append_sheet(wb,mk(out,[24,10,16,5,50,20,26,45,38,36,22,20]),"כל התכניות");
+  XLSX.utils.book_append_sheet(wb,mk(cmp,[50,10,10,24,22,45,36,38,22,20]),"השוואה לפי תוצאה");
   const data=XLSX.write(wb,{bookType:"xlsx",type:"array"});
   try{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([data]));a.download="ריכוז תכניות עבודה.xlsx";a.click()}catch(e){toast("ההורדה לא זמינה")}
 }
@@ -1136,6 +1188,8 @@ document.addEventListener("click",e=>{
   if(t.id==="adminExit")return exitAdmin();
   if(t.id==="adminRefresh"){loadAdmin(admin.pw).then(ok=>{renderView();if(!ok)toast(admin.err)});return}
   if(t.id==="adminExportAll")return exportAllXlsx();
+  if(d.adminview){admin.view=d.adminview;renderView();return}
+  if(d.cmpzone){admin.cmpZone=d.cmpzone;renderView();return}
   if(d.viewrow)return openViewOnly(d.viewrow);
   if(d.pick)return selectSchool(d.pick);
   if(d.admsave!==undefined)return adminSaveSchool(d.admsave);
@@ -1168,6 +1222,7 @@ document.addEventListener("input",e=>{
   const t=e.target,d=t.dataset;
   if(t.parentElement&&t.parentElement.classList.contains("aiw")&&!t.value.trim()){aiFilled.delete(aiKey(t));const b=t.parentElement.querySelector(".aib");if(b)setAiBtn(b,false)}
   editGroup=(t.type==="checkbox"||t.tagName==="SELECT")?null:"f:"+JSON.stringify(d);
+  if(t.id==="cmpQ"){admin.cmpQ=t.value;const pos=t.selectionStart;renderView();const f=$("#cmpQ");if(f){f.focus();f.setSelectionRange(pos,pos)}return}
   if(t.id==="adminQ"){admin.q=t.value;const pos=t.selectionStart;renderView();const f=$("#adminQ");if(f){f.focus();f.setSelectionRange(pos,pos)}return}
   if(!S)return;
   if(d.prep!==undefined){S.prep[+d.prep][d.k]=t.value;return touch(false)}
