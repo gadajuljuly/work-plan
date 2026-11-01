@@ -239,7 +239,7 @@ const CRIT=[["imp","משמעותי לשינוי"],["urg","פער דחוף"],["fe
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
-function toast(msg){const t=document.createElement("div");t.className="toast";t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
+function toast(msg){document.querySelectorAll(".toast").forEach(x=>x.remove());const t=document.createElement("div");t.className="toast";t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
 function blankSchool(name,year){return {name,year:year||"",createdAt:Date.now(),updatedAt:Date.now(),prep:[],map:{},custom:[],snap:{},zoneCh:{},plan:[],align:{}}}
 function allOutcomes(S){return OUTCOMES.concat((S.custom||[]).map(c=>({...c,custom:true})))}
 function outcomeById(S,id){return allOutcomes(S).find(o=>o.id===id)}
@@ -777,7 +777,7 @@ async function aiFill(btn){
   }catch(e){toast("אין חיבור לבינה המלאכותית כרגע")}
   finally{btn.disabled=false;btn.textContent="✨";el.classList.remove("aibusy")}
 }
-function toastUndo(msg,undo){const t=document.createElement("div");t.className="toast";t.innerHTML=`${esc(msg)} <button class="undo">ביטול</button>`;t.querySelector("button").onclick=()=>{undo();t.remove()};document.body.appendChild(t);setTimeout(()=>t.remove(),7000)}
+function toastUndo(msg,undo){document.querySelectorAll(".toast").forEach(x=>x.remove());const t=document.createElement("div");t.className="toast";t.innerHTML=`${esc(msg)} <button class="undo">ביטול</button>`;t.querySelector("button").onclick=()=>{undo();t.remove()};document.body.appendChild(t);setTimeout(()=>t.remove(),7000)}
 
 /* ---------- Admin: view all users' data (password checked on the server) ---------- */
 const admin={on:false,pw:"",rows:[],q:"",loading:false,err:""};
