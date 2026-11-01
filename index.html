@@ -282,6 +282,13 @@ function keysOf(o){if(!TWO_SCORE(o.zone))return ["score"];const k=[];if(!o.naA)k
 function valsOf(o){const m=S.map[o.id];if(!m)return [];return keysOf(o).map(k=>m[k]).filter(v=>v!=null)}
 function lowOf(o){const v=valsOf(o).filter(x=>x>0);return v.length?Math.min(...v):null}
 function isScored(o){return valsOf(o).length>0}
+function scoreDots(o,m){
+  m=m||{};
+  const one=(k,lbl)=>{const v=m[k];return `<span class="dotw"><small>${lbl}</small><span class="dot ${v?"s"+v:""}" title="${lbl}">${v==null?"–":v===0?"?":v}</span></span>`};
+  const empty=`<span class="dotw"></span>`;
+  if(!TWO_SCORE(o.zone))return empty+one("score","ניקוד");
+  return (o.naA?empty:one("scoreA","מצב קיים"))+(o.naB?empty:one("score","מצב עדכני"));
+}
 function avg(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:null}
 function scoreText(o){const m=S.map[o.id]||{};return keysOf(o).map(k=>m[k]==null?"":(keysOf(o).length>1?(k==="scoreA"?"צוות השפה: ":"בית הספר: "):"")+(m[k]?m[k]+" – ":"")+SCORE_LABEL[m[k]]).filter(Boolean).join(" | ")}
 
@@ -506,7 +513,7 @@ function scoreButtons(o,key,label){
 }
 function stmtCard(o){
   const m=S.map[o.id]||{};const ks=keysOf(o);
-  const dots=ks.map(k=>{const v=m[k];const lbl=TWO_SCORE(o.zone)?(k==="scoreA"?"מצב קיים":"מצב עדכני"):"ניקוד";return `<span class="dotw"><small>${lbl}</small><span class="dot ${v?"s"+v:""}" title="${lbl}">${v==null?"–":v===0?"?":v}</span></span>`}).join("");
+  const dots=scoreDots(o,m);
   const two=ks.length>1;
   const btns=ks.map(k=>scoreButtons(o,k,TWO_SCORE(o.zone)?(k==="scoreA"?"ניקוד מצב קיים – צוות השפה":"ניקוד מצב עדכני כללי של בית הספר"):"ניקוד המבטא מצב עדכני כללי של בית הספר")).join("");
   const na=TWO_SCORE(o.zone)&&(o.naA||o.naB)?`<div class="status">${o.naA?"ניקוד צוות השפה: לא רלוונטי":"ניקוד כללי של בית הספר: לא רלוונטי"}</div>`:"";
@@ -557,7 +564,7 @@ function viewSnap(){
   <div class="card"><h2>בחירת היגדים שיהוו בסיס לתוצאות בתכנית</h2>
    <p class="lead">לא כל היגד שקיבל ציון נמוך הופך אוטומטית לאתגר מרכזי. סמנו את הקריטריונים לכל מועמד ובחרו מספר מצומצם של תוצאות. <span class="pill ${selCount>5?"warn":"brand"}">נבחרו ${selCount}</span>${selCount>5?` <span class="status">מומלץ לצמצם</span>`:""}</p>
    ${candidates.length?`<div class="tablewrap"><table><thead><tr><th>היגד</th><th>ניקוד</th><th>קריטריונים</th><th>בחירה</th></tr></thead><tbody>
-   ${candidates.map(o=>{const m=S.map[o.id];return `<tr><td>${esc(o.text)}<div class="status">${ZONES[o.zone]} · ${esc(o.comp)}</div></td><td style="white-space:nowrap"><div style="display:flex;gap:4px">${keysOf(o).map(k=>{if(m[k]==null)return "";const lbl=TWO_SCORE(o.zone)?(k==="scoreA"?"מצב קיים":"מצב עדכני"):"ניקוד";return `<span class="dotw"><small>${lbl}</small><span class="dot ${m[k]?"s"+m[k]:""}" title="${lbl}">${m[k]||"?"}</span></span>`}).join("")}</div></td>
+   ${candidates.map(o=>{const m=S.map[o.id];return `<tr><td>${esc(o.text)}<div class="status">${ZONES[o.zone]} · ${esc(o.comp)}</div></td><td style="white-space:nowrap"><div style="display:flex;gap:4px">${scoreDots(o,m)}</div></td>
      <td><div class="crit">${CRIT.map(([k,l])=>`<label><input type="checkbox" data-crit="${o.id}" data-k="${k}" ${m.crit&&m.crit[k]?"checked":""}>${l}</label>`).join("")}</div></td>
      <td><label class="row"><input type="checkbox" data-select="${o.id}" ${m.selected?"checked":""}>לתכנית</label></td></tr>`}).join("")}</tbody></table></div>`:`<p class="empty">יש לנקד היגדים בלשונית "מיפוי" כדי שיופיעו כאן.</p>`}
    <div class="tip" style="margin-top:12px"><b>קריטריונים:</b> עד כמה ההיגד משמעותי לשינוי · עד כמה הפער דחוף (חוזר במקורות שונים? מה יקרה אם לא נטפל?) · עד כמה ניתן לקדם השנה (מוכנות, מעגל השפעה, אפשרות מעקב) · היגד בעל השפעה רחבה.</div>
