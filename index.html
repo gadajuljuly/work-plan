@@ -172,6 +172,9 @@ body.remote #delSchool{display:none}
 .zt.on{background:var(--zc);color:#fff;box-shadow:0 3px 10px rgba(0,0,0,.15)}
 .zt.on .zc{background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.6)}
 @media (prefers-color-scheme: dark){.zt{--zs:#23213a}.zt1{--zs:#3a3112}.zt2{--zs:#3a2618}.zt0{--zc:#9d90ff}.zt1{--zc:#f5c400}.zt2{--zc:#f59a52}.zt .zc{background:transparent}}
+
+.dotw{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none;min-width:44px}
+.dotw small{font-size:10.5px;line-height:1;color:var(--muted);white-space:nowrap}
 </style>
 </head>
 <body>
@@ -496,7 +499,7 @@ function scoreButtons(o,key,label){
 }
 function stmtCard(o){
   const m=S.map[o.id]||{};const ks=keysOf(o);
-  const dots=ks.map(k=>{const v=m[k];return `<span class="dot ${v?"s"+v:""}" title="${k==="scoreA"?"צוות השפה":"בית הספר"}">${v==null?"–":v===0?"?":v}</span>`}).join("");
+  const dots=ks.map(k=>{const v=m[k];const lbl=TWO_SCORE(o.zone)?(k==="scoreA"?"צוות השפה":"בית הספר"):"ניקוד";return `<span class="dotw"><small>${lbl}</small><span class="dot ${v?"s"+v:""}" title="${lbl}">${v==null?"–":v===0?"?":v}</span></span>`}).join("");
   const two=ks.length>1;
   const btns=ks.map(k=>scoreButtons(o,k,TWO_SCORE(o.zone)?(k==="scoreA"?"ניקוד מצב קיים – צוות השפה":"ניקוד מצב עדכני כללי של בית הספר"):"ניקוד המבטא מצב עדכני כללי של בית הספר")).join("");
   const na=TWO_SCORE(o.zone)&&(o.naA||o.naB)?`<div class="status">${o.naA?"ניקוד צוות השפה: לא רלוונטי":"ניקוד כללי של בית הספר: לא רלוונטי"}</div>`:"";
