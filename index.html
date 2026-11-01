@@ -149,6 +149,14 @@ body.adminmode .lock{background:var(--brand);color:#fff;border-color:var(--brand
 .xplan .aiw textarea{padding-bottom:30px}
 .aibusy{opacity:.5}
 .toast .undo{margin-right:8px;padding:2px 10px;font-size:13px}
+
+body.remote #delSchool{display:none}
+.schoolgrid{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:16px}
+.schoolgrid button{min-width:180px;padding:14px 18px;display:flex;flex-direction:column;gap:2px;align-items:center;font-size:16px}
+.schoolgrid button small{color:var(--muted);font-size:13px}
+.schoolgrid button:hover{background:var(--brand-soft)}
+.admtbl input{width:100%}
+.admtbl .newrow td{background:var(--brand-soft)}
 </style>
 </head>
 <body>
@@ -307,6 +315,7 @@ async function initStore(){
   } else fallbackLocal();
 }
 function fallbackLocal(){
+  if(REMOTE.url&&REMOTE.key)return initRemote();
   store.mode="local";remoteOn=!!(REMOTE.url&&REMOTE.key);const all=store.localAll();schools={};
   for(const id in all) schools[id]={name:all[id].name,year:all[id].year,updatedAt:all[id].updatedAt,data:all[id]};
   if(!curId){const ids=sortedIds(); if(ids.length) openSchool(ids[0],true)}
@@ -337,6 +346,7 @@ function undo(){
 }
 function touch(structural){if(viewOnly){S=structuredClone(viewOnly.data);renderView();toast("מצב צפייה בלבד – לא ניתן לערוך");return}recordUndo();dirty=true;lastEdit=Date.now();S.updatedAt=Date.now();setStatus("שומר…");clearTimeout(saveTimer);saveTimer=setTimeout(flush,1200);if(structural)renderView()}
 async function flush(){
+  if(store.mode==="remote")return remoteFlush();
   if(!S||!curId||viewOnly)return; if(saving){clearTimeout(saveTimer);saveTimer=setTimeout(flush,800);return}
   saving=true;dirty=false;const id=curId,data=structuredClone(S);
   try{
@@ -366,9 +376,9 @@ async function deleteSchool(){
 }
 
 /* ---------- Modal ---------- */
-function modal(html,onOk){
+function modal(html,onOk,onCancel){
   const root=$("#modalRoot");root.innerHTML=`<div class="modal-bg"><div class="modal">${html}<div class="row" style="justify-content:flex-start;margin-top:14px"><button class="primary" id="mOk">אישור</button><button id="mCancel">ביטול</button></div></div></div>`;
-  $("#mCancel").onclick=()=>root.innerHTML="";
+  $("#mCancel").onclick=()=>{root.innerHTML="";if(onCancel)onCancel()};
   $("#mOk").onclick=()=>{if(onOk()!==false)root.innerHTML=""};
   const f=root.querySelector("input,select,textarea");if(f)f.focus();
 }
@@ -381,6 +391,11 @@ function askNewSchool(){
 const TABS=[["prep","היערכות למיפוי"],["map","מיפוי"],["snap","תמונת מצב ובחירה"],["plan","תכנית עבודה"],["align","בדיקת הלימה"],["guide","מדריך"]];
 function renderHeader(){
   const sel=$("#schoolSel"),ids=sortedIds();
+  if(store.mode==="remote"){
+    sel.innerHTML=`<option value="">— בחרו בית ספר —</option>`+R.list.map(s=>`<option value="${esc(s.id)}" ${s.id===curId?"selected":""}>${esc(s.name)}${s.year?" – "+esc(s.year):""}</option>`).join("");
+    sel.disabled=false;sel.style.display=admin.on?"none":"";$("#newSchool").style.display="none";
+    $("#exportBtn").style.display=S&&!admin.on?"":"none";updateUndoBtn();return;
+  }
   sel.innerHTML=ids.length?ids.map(id=>`<option value="${id}" ${id===curId?"selected":""}>${esc(schools[id].name)}${schools[id].year?" – "+esc(schools[id].year):""}</option>`).join(""):`<option>אין בתי ספר עדיין</option>`;
   sel.disabled=!ids.length;
   $("#exportBtn").style.display=S&&!admin.on?"":"none";updateUndoBtn();
@@ -397,6 +412,7 @@ function renderView(){
   $("#tabs").style.display="";
   const banner=viewOnly?`<div class="vobanner"><span>👁 צפייה בלבד: <b>${esc(S.name)}</b>${S.year?" – "+esc(S.year):""} · עודכן ${fmtDate(viewOnly.updated_at)}</span><span class="grow"></span><button onclick="exportXlsx()">ייצוא ל-Excel</button><button class="primary" id="backAdmin">חזרה לרשימת בתי הספר</button></div>`:"";
   if(tab==="guide"){v.innerHTML=viewGuide();return}
+  if(!S&&store.mode==="remote"){v.innerHTML=viewPick();return}
   if(!S){v.innerHTML=`<div class="card welcome"><h2>ברוכים הבאים</h2><p class="lead">האפליקציה מלווה את התהליך מהמיפוי ועד תכנית העבודה:<br>היערכות ← מיפוי וניקוד ← תמונת מצב ובחירת היגדים ← תכנית עבודה ← בדיקת הלימה.</p><button class="primary" onclick="askNewSchool()">+ התחלת מיפוי לבית ספר חדש</button></div>`;return}
   v.innerHTML=banner+{prep:viewPrep,map:viewMap,snap:viewSnap,plan:viewPlan,align:viewAlign}[tab]();
   if(viewOnly){v.querySelectorAll("textarea,input[type=text],input:not([type])").forEach(x=>x.readOnly=true);v.querySelectorAll("select,input[type=checkbox]").forEach(x=>x.disabled=true);v.querySelectorAll("#addPrep,#addPrepEx,[data-delprep],[data-addcustom],[data-delcustom],#addPlan,[data-addsub],[data-delrow],[data-reset],#delSchool,#unhide,#toPlan").forEach(x=>x.style.display="none")}
@@ -719,6 +735,153 @@ function viewGuide(){
   </div>`;
 }
 
+/* ---------- Shared school mode (server): pick a school from the list, one password per school, everyone edits the same document ---------- */
+const R={list:[],version:0,base:null,pw:"",listT:0,pendingRender:false};
+function pwStore(){try{return JSON.parse(localStorage.getItem("mapplan.pw")||"{}")}catch(e){return {}}}
+function pwSave(id,pw){const m=pwStore();if(pw)m[id]=pw;else delete m[id];try{localStorage.setItem("mapplan.pw",JSON.stringify(m))}catch(e){}}
+function savePending(id,obj){try{localStorage.setItem("mapplan.pending."+id,JSON.stringify(obj))}catch(e){}}
+function loadPending(id){try{return JSON.parse(localStorage.getItem("mapplan.pending."+id)||"null")}catch(e){return null}}
+function clearPending(id){try{localStorage.removeItem("mapplan.pending."+id)}catch(e){}}
+function isPwErr(e){return e&&(e.status===401||e.status===403||/password/i.test(e.message||""))}
+function normalize(d){
+  d=d&&typeof d==="object"?d:{};
+  ["prep","plan","custom"].forEach(k=>d[k]=Array.isArray(d[k])?d[k]:[]);
+  ["map","snap","zoneCh","align"].forEach(k=>d[k]=d[k]&&typeof d[k]==="object"&&!Array.isArray(d[k])?d[k]:{});
+  d.prep.forEach((r,i)=>{if(!r.id)r.id="old"+i});
+  return d;
+}
+/* three-way merge: keeps both my changes and other users' changes; on a true clash in the same field, mine wins */
+const isObj=x=>x&&typeof x==="object"&&!Array.isArray(x);
+const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+function merge3(base,local,remote){
+  if(same(local,base))return remote;
+  if(same(remote,base)||same(local,remote))return local;
+  if(isObj(local)&&isObj(remote)){const b=isObj(base)?base:{},out={};
+    new Set([...Object.keys(remote),...Object.keys(local)]).forEach(k=>{const v=merge3(b[k],local[k],remote[k]);if(v!==undefined)out[k]=v});return out}
+  if(Array.isArray(local)&&Array.isArray(remote)&&[...local,...remote].every(x=>isObj(x)&&x.id)){
+    const bm=new Map((Array.isArray(base)?base:[]).filter(x=>isObj(x)&&x.id).map(x=>[x.id,x]));
+    const lm=new Map(local.map(x=>[x.id,x])),rm=new Map(remote.map(x=>[x.id,x]));
+    const order=[...remote.map(x=>x.id),...local.map(x=>x.id).filter(id=>!rm.has(id))],out=[];
+    order.forEach(id=>{const v=merge3(bm.get(id),lm.get(id),rm.get(id));if(v!==undefined)out.push(v)});return out}
+  return local;
+}
+function requestRender(){
+  const a=document.activeElement;
+  if(a&&$("#view").contains(a)&&a.matches("textarea,input")){R.pendingRender=true;return}
+  R.pendingRender=false;renderAll();
+}
+document.addEventListener("focusout",()=>setTimeout(()=>{if(R.pendingRender){const a=document.activeElement;if(!(a&&$("#view").contains(a)&&a.matches("textarea,input")))requestRender()}},50));
+
+async function initRemote(){
+  store.mode="remote";remoteOn=true;document.body.classList.add("remote");$("#lockBtn").style.display="";
+  setStatus("טוען…");await loadSchoolList();
+  let last=null;try{last=localStorage.getItem("mapplan.cur")}catch(e){}
+  if(last&&R.list.some(s=>s.id===last)&&pwStore()[last])await openRemote(last,pwStore()[last],true);
+  renderAll();
+  setInterval(poll,10000);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)poll()});
+}
+async function loadSchoolList(){
+  try{R.list=(await rpc("wp_list_schools",{}))||[];R.listT=Date.now();if(!curId)setStatus("")}
+  catch(e){setStatus("אין חיבור לשרת")}
+}
+async function openRemote(id,pw,silent){
+  try{
+    if(dirty&&curId&&curId!==id)await remoteFlush();
+    const res=await rpc("wp_school_open",{p_id:id,p_password:pw});
+    const data=normalize(res.data);data.name=res.name;data.year=res.year;
+    curId=id;R.pw=pw;R.version=res.version;R.base=JSON.stringify(data);
+    const pend=loadPending(id);
+    if(pend&&pend.data){S=normalize(merge3(JSON.parse(pend.base||"{}"),pend.data,data));S.name=res.name;S.year=res.year;dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(flush,300)}
+    else{S=data;dirty=false}
+    pwSave(id,pw);try{localStorage.setItem("mapplan.cur",id)}catch(e){}
+    resetUndo();setStatus("מחובר ✓ – משותף לכל צוות בית הספר");
+    if(!silent)renderAll();
+    return true;
+  }catch(e){if(isPwErr(e)){pwSave(id,null);return "pw"}return false}
+}
+function selectSchool(id){
+  if(!id||id===curId){renderHeader();return}
+  const pw=pwStore()[id];
+  if(pw)openRemote(id,pw).then(r=>{if(r==="pw")askSchoolPw(id);else if(!r){toast("אין חיבור לשרת כרגע");renderHeader()}});
+  else askSchoolPw(id);
+}
+function askSchoolPw(id){
+  const s=R.list.find(x=>x.id===id)||{};
+  modal(`<h3>🏫 ${esc(s.name||"")}</h3><p class="lead">הזינו את סיסמת בית הספר. הסיסמה תישמר במכשיר הזה.</p><label class="f">סיסמה</label><input id="mSpw" type="password" autocomplete="off"><div id="mSpwErr" class="status" style="color:var(--bad)"></div>`,()=>{
+    const pw=$("#mSpw").value;if(!pw){$("#mSpw").focus();return false}
+    const btn=$("#mOk");btn.disabled=true;btn.textContent="בודק…";
+    openRemote(id,pw,true).then(r=>{if(r===true){$("#modalRoot").innerHTML="";if(tab==="guide")tab="prep";renderAll()}else{btn.disabled=false;btn.textContent="אישור";$("#mSpwErr").textContent=r==="pw"?"סיסמה שגויה":"אין חיבור לשרת כרגע"}});
+    return false;
+  },()=>renderHeader());
+  setTimeout(()=>{const f=$("#mSpw");if(f)f.addEventListener("keydown",e=>{if(e.key==="Enter")$("#mOk").click()})},0);
+}
+async function remoteFlush(){
+  if(!S||!curId||viewOnly)return;
+  if(saving){clearTimeout(saveTimer);saveTimer=setTimeout(flush,800);return}
+  saving=true;dirty=false;const id=curId;
+  savePending(id,{data:S,base:R.base,version:R.version});
+  try{
+    for(let i=0;i<6;i++){
+      const data=JSON.parse(JSON.stringify(S));
+      const res=await rpc("wp_school_save",{p_id:id,p_password:R.pw,p_version:R.version,p_data:data});
+      if(id!==curId)return;
+      if(!res.conflict){R.version=res.version;R.base=JSON.stringify(data);if(!dirty)clearPending(id);setStatus(dirty?"שומר…":"נשמר ✓ – משותף לכל צוות בית הספר");return}
+      // someone else saved in the meantime: merge their changes with mine and try again
+      const remote=normalize(res.data);remote.name=S.name;remote.year=S.year;
+      const merged=normalize(merge3(JSON.parse(R.base),S,remote));merged.name=S.name;merged.year=S.year;
+      R.version=res.version;R.base=JSON.stringify(remote);
+      S=merged;lastSnap=JSON.stringify(S);requestRender();
+    }
+    dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(flush,2000);
+  }catch(e){
+    dirty=true;
+    if(isPwErr(e)){setStatus("סיסמת בית הספר שונתה – יש להזין אותה מחדש");pwSave(id,null);askSchoolPw(id)}
+    else{setStatus("אין חיבור – השינויים שמורים במכשיר ויישלחו כשהחיבור יחזור");clearTimeout(saveTimer);saveTimer=setTimeout(flush,5000)}
+  }finally{saving=false}
+}
+async function poll(){
+  if(store.mode!=="remote"||admin.on||viewOnly||document.hidden)return;
+  if(Date.now()-R.listT>60000){await loadSchoolList();if(!R.pendingRender&&!$("#modalRoot").innerHTML)renderHeader()}
+  if(!curId||saving||dirty)return;
+  try{
+    const v=await rpc("wp_school_version",{p_id:curId,p_password:R.pw});
+    if(v===R.version||dirty||saving)return;
+    const id=curId,res=await rpc("wp_school_open",{p_id:id,p_password:R.pw});
+    if(dirty||saving||id!==curId)return;
+    const data=normalize(res.data);data.name=res.name;data.year=res.year;
+    R.version=res.version;R.base=JSON.stringify(data);S=data;resetUndo();
+    setStatus("עודכן עם שינויים של משתמשים אחרים ✓");requestRender();
+  }catch(e){if(isPwErr(e)){const id=curId;curId=null;S=null;pwSave(id,null);renderAll();askSchoolPw(id)}}
+}
+function viewPick(){
+  return `<div class="card welcome"><h2>בחרו בית ספר</h2><p class="lead">בחרו את בית הספר שלכם והזינו את סיסמת בית הספר.<br>כל מי שנכנס לאותו בית ספר רואה ועורך את אותם נתונים.</p>
+  <div class="schoolgrid">${R.list.map(s=>`<button data-pick="${esc(s.id)}"><b>${esc(s.name)}</b>${s.year?`<small>${esc(s.year)}</small>`:""}</button>`).join("")||`<p class="status">עדיין לא הוגדרו בתי ספר. מנהל המערכת מוסיף בתי ספר דרך המנעול 🔒 למעלה.</p>`}</div></div>`;
+}
+/* admin: manage the school list */
+function viewSchoolAdmin(){
+  return `<div class="card"><h3>ניהול בתי ספר</h3><p class="lead">רק בתי הספר שברשימה מופיעים למשתמשים. לכל בית ספר סיסמה משלו – מי שמקבל אותה רואה ועורך את הנתונים של בית הספר.</p>
+   <div class="tablewrap"><table class="admtbl"><thead><tr><th>שם בית הספר</th><th>שנת לימודים</th><th>סיסמת בית הספר</th><th></th></tr></thead><tbody>
+   ${admin.rows.map(r=>`<tr data-admrow="${esc(r.id)}"><td><input data-adm="name" value="${esc(r.school_name)}"></td><td><input data-adm="year" value="${esc(r.school_year)}"></td><td><input data-adm="password" value="${esc(r.password)}"></td>
+     <td class="row" style="flex-wrap:nowrap"><button data-admsave="${esc(r.id)}">שמירה</button><button class="ghost danger" data-admdel="${esc(r.id)}">מחיקה</button></td></tr>`).join("")}
+   <tr data-admrow="" class="newrow"><td><input data-adm="name" placeholder="שם בית ספר חדש"></td><td><input data-adm="year" placeholder="למשל תשפ״ז"></td><td><input data-adm="password" placeholder="סיסמה"></td><td><button class="primary" data-admsave="">+ הוספה</button></td></tr>
+   </tbody></table></div></div>`;
+}
+async function adminSaveSchool(id){
+  const tr=document.querySelector(`tr[data-admrow="${CSS.escape(id)}"]`);if(!tr)return;
+  const g=k=>tr.querySelector(`[data-adm="${k}"]`).value.trim();
+  if(!g("name")||!g("password")){toast("יש למלא שם וסיסמה");return}
+  try{await rpc("wp_admin_save_school",{p_admin:admin.pw,p_id:id,p_name:g("name"),p_year:g("year"),p_password:g("password")});
+    if(id)pwSave(id,null);await loadAdmin(admin.pw);await loadSchoolList();renderView();toast(id?"בית הספר עודכן":"בית הספר נוסף")}
+  catch(e){toast("השמירה נכשלה")}
+}
+function adminDeleteSchool(id){
+  const r=admin.rows.find(x=>x.id===id);if(!r)return;
+  modal(`<h3>למחוק את "${esc(r.school_name)}"?</h3><p>כל המיפוי ותכנית העבודה של בית הספר יימחקו לצמיתות, אצל כל המשתמשים.</p>`,()=>{
+    rpc("wp_admin_delete_school",{p_admin:admin.pw,p_id:id}).then(async()=>{pwSave(id,null);clearPending(id);await loadAdmin(admin.pw);await loadSchoolList();renderView();toast("בית הספר נמחק")}).catch(()=>toast("המחיקה נכשלה"));
+  });
+}
+
 /* ---------- AI fill (✨) for free-text fields – via the "ai-fill" server function (Gemini) ---------- */
 function aiOn(){return remoteOn&&!viewOnly}
 function schoolContext(){
@@ -793,7 +956,9 @@ function askAdmin(){
 }
 async function loadAdmin(pw){
   admin.err="";
-  try{const rows=await rpc("wp_admin_list",{p_password:pw});admin.rows=(rows||[]).map(r=>({...r,data:typeof r.data==="string"?JSON.parse(r.data):r.data}));return true}
+  try{
+    if(store.mode==="remote"){const rows=await rpc("wp_admin_schools",{p_admin:pw});admin.rows=(rows||[]).map(r=>({id:r.id,school_name:r.name,school_year:r.year,password:r.password,updated_at:r.updated_at,data:normalize(typeof r.data==="string"?JSON.parse(r.data):r.data)}));return true}
+    const rows=await rpc("wp_admin_list",{p_password:pw});admin.rows=(rows||[]).map(r=>({...r,data:typeof r.data==="string"?JSON.parse(r.data):r.data}));return true}
   catch(e){admin.err=e.status===401||e.status===403||/password/i.test(e.message)?"סיסמה שגויה":"לא ניתן להתחבר לשרת כרגע. נסו שוב.";return false}
 }
 function enterAdmin(pw){
@@ -803,6 +968,7 @@ function enterAdmin(pw){
 function exitAdmin(){
   admin.on=false;admin.pw="";admin.rows=[];viewOnly=null;dirty=false;
   const st=ownState||{};ownState=null;tab=st.tab||"prep";
+  if(store.mode==="remote"){curId=null;S=null;renderAll();if(st.curId&&pwStore()[st.curId])openRemote(st.curId,pwStore()[st.curId]);return}
   if(st.curId&&schools[st.curId])openSchool(st.curId,true);else{curId=null;S=null;const ids=sortedIds();if(ids.length)openSchool(ids[0],true)}
   renderAll();
 }
@@ -824,15 +990,16 @@ function viewAdmin(){
   const rows=admin.rows.filter(r=>!q||norm(r.school_name).includes(q)||norm(r.school_year).includes(q));
   const groups={};rows.forEach(r=>{const k=norm(r.school_name)||"ללא שם";(groups[k]=groups[k]||[]).push(r)});
   const names=Object.keys(groups).sort((a,b)=>a.localeCompare(b,"he"));
-  return `<div class="card adminhead"><div class="row"><h2 style="margin:0">🔓 מצב מנהל – נתוני כל המשתמשים</h2><span class="grow"></span>
+  return `<div class="card adminhead"><div class="row"><h2 style="margin:0">🔓 מצב מנהל</h2><span class="grow"></span>
     <button id="adminRefresh">רענון</button><button id="adminExportAll" class="primary">ייצוא ריכוז ל-Excel</button><button id="adminExit">יציאה ממצב מנהל</button></div>
-    <p class="lead" style="margin-top:8px">${admin.rows.length} רשומות · ${names.length} בתי ספר. רשומות עם אותו שם בית ספר מקובצות יחד.</p>
+    <p class="lead" style="margin-top:8px">${store.mode==="remote"?`${admin.rows.length} בתי ספר. כאן מוסיפים בתי ספר וקובעים להם סיסמה, וצופים בנתונים של כל אחד מהם.`:`${admin.rows.length} רשומות · ${names.length} בתי ספר. רשומות עם אותו שם בית ספר מקובצות יחד.`}</p>
     <input id="adminQ" placeholder="חיפוש לפי שם בית ספר או שנה…" value="${esc(admin.q)}" style="max-width:420px"></div>
+   ${store.mode==="remote"?viewSchoolAdmin():""}
    ${names.length?names.map(n=>`<div class="card"><h3>${esc(n)} <span class="pill">${groups[n].length} ${groups[n].length>1?"רשומות":"רשומה"}</span></h3>
      <div class="tablewrap"><table><thead><tr><th>שנה</th><th>עדכון אחרון</th><th>מיפוי</th><th>היגדים שנבחרו</th><th>שורות בתכנית</th><th></th></tr></thead><tbody>
      ${groups[n].map(r=>{const s=statsOf(r.data||{});return `<tr><td>${esc(r.school_year)||"–"}</td><td>${fmtDate(r.updated_at)}</td>
        <td><div class="row"><div class="bar" style="max-width:120px"><i style="width:${s.total?s.scored/s.total*100:0}%"></i></div><span class="status">${s.scored}/${s.total}</span></div></td>
-       <td>${s.sel}</td><td>${s.plan}</td><td><button class="primary" data-viewrow="${esc(r.id)}">צפייה</button></td></tr>`}).join("")}
+       <td>${s.sel}</td><td>${s.plan}</td><td class="row" style="flex-wrap:nowrap"><button data-viewrow="${esc(r.id)}">צפייה</button>${store.mode==="remote"?`<button class="primary" data-editrow="${esc(r.id)}">פתיחה לעריכה</button>`:""}</td></tr>`}).join("")}
      </tbody></table></div></div>`).join(""):`<div class="card empty">${admin.rows.length?"אין תוצאות לחיפוש":"עדיין לא נשמרו נתונים בשרת"}</div>`}`;
 }
 async function exportAllXlsx(){
@@ -919,6 +1086,10 @@ document.addEventListener("click",e=>{
   if(t.id==="adminRefresh"){loadAdmin(admin.pw).then(ok=>{renderView();if(!ok)toast(admin.err)});return}
   if(t.id==="adminExportAll")return exportAllXlsx();
   if(d.viewrow)return openViewOnly(d.viewrow);
+  if(d.pick)return selectSchool(d.pick);
+  if(d.admsave!==undefined)return adminSaveSchool(d.admsave);
+  if(d.admdel)return adminDeleteSchool(d.admdel);
+  if(d.editrow){const r=admin.rows.find(x=>x.id===d.editrow);if(r){pwSave(r.id,r.password);ownState={curId:null,tab:"plan"};exitAdmin();selectSchool(r.id)}return}
   if(t.id==="backAdmin"){viewOnly=null;S=null;curId=null;renderAll();return}
   if(t.id==="exportBtn")return exportXlsx();
   if(!S)return;
@@ -927,8 +1098,8 @@ document.addEventListener("click",e=>{
   if(t.id==="collapseAll"){openStmts.clear();renderView();return}
   if(d.mapzone){mapZone=+d.mapzone;renderView();return}
   if(d.score){const m=mapOf(S,d.score);const v=+d.v,k=d.key;m[k]=m[k]===v?null:v;openStmts.add(d.score);touch(true);return}
-  if(t.id==="addPrep"){S.prep.push({stmt:"",info:"",source:"",tool:"",who:"",due:""});touch(true);return}
-  if(t.id==="addPrepEx"){S.prep.push({stmt:"z0c3s3",info:"תדירות ביקורים בכיתות, מוקדי התבוננות ומשוב",source:"מנהל, מורים, יומן ותיעוד",tool:"ריאיון, עיון במסמכים ותצפית",who:"מלווה",due:"לפני ישיבת המיפוי"},{stmt:"z1c8s0",info:"אופי השיח והלמידה בישיבות",source:"מורים, מאמנת ופרוטוקולים",tool:"קבוצת מיקוד ותצפית בישיבה",who:"מאמנת ומנחה",due:"במהלך החודש"},{stmt:"z2c10s2",info:"שימוש בנתונים, הרכב קבוצות והתאמת משימות",source:"מורים, מערכים ותצפיות",tool:"תצפית, ריאיון וניתוח מסמכים",who:"מנחה ומאמנת",due:"לפני הדירוג"});touch(true);return}
+  if(t.id==="addPrep"){S.prep.push({id:uid(),stmt:"",info:"",source:"",tool:"",who:"",due:""});touch(true);return}
+  if(t.id==="addPrepEx"){S.prep.push({id:uid(),stmt:"z0c3s3",info:"תדירות ביקורים בכיתות, מוקדי התבוננות ומשוב",source:"מנהל, מורים, יומן ותיעוד",tool:"ריאיון, עיון במסמכים ותצפית",who:"מלווה",due:"לפני ישיבת המיפוי"},{id:uid(),stmt:"z1c8s0",info:"אופי השיח והלמידה בישיבות",source:"מורים, מאמנת ופרוטוקולים",tool:"קבוצת מיקוד ותצפית בישיבה",who:"מאמנת ומנחה",due:"במהלך החודש"},{id:uid(),stmt:"z2c10s2",info:"שימוש בנתונים, הרכב קבוצות והתאמת משימות",source:"מורים, מערכים ותצפיות",tool:"תצפית, ריאיון וניתוח מסמכים",who:"מנחה ומאמנת",due:"לפני הדירוג"});touch(true);return}
   if(d.delprep){S.prep.splice(+d.delprep,1);touch(true);return}
   if(d.addcustom!==undefined){const c=COMPS[+d.addcustom];modal(`<h3>מרכיב נוסף – ${esc(c.comp)}</h3><label class="f">נוסח ההיגד</label><textarea id="mText"></textarea>`,()=>{const tx=$("#mText").value.trim();if(!tx)return false;const id="c"+uid();S.custom.push({id,zone:c.zone,comp:c.comp,text:tx});openStmts.add(id);touch(true)});return}
   if(d.delcustom){S.custom=S.custom.filter(c=>c.id!==d.delcustom);delete S.map[d.delcustom];touch(true);return}
@@ -965,13 +1136,14 @@ document.addEventListener("input",e=>{
 document.addEventListener("change",e=>{
   const t=e.target;
   if(t.dataset&&t.dataset.cfg){renderView();return}
+  if(t.id==="schoolSel"&&store.mode==="remote"){selectSchool(t.value);return}
   if(t.id==="schoolSel"){if(dirty)flush();openSchool(t.value);return}
   if(S&&t.dataset.prep!==undefined&&t.dataset.k==="stmt"){S.prep[+t.dataset.prep].stmt=t.value;touch(false)}
 });
 document.addEventListener("keydown",e=>{
   if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==="z"){const t=e.target;if(t.matches&&t.matches("input,textarea,select"))return;e.preventDefault();undo()}
 });
-window.addEventListener("beforeunload",()=>{if(dirty)flush()});
+window.addEventListener("beforeunload",()=>{if(dirty&&store.mode==="remote"&&curId&&S)savePending(curId,{data:S,base:R.base,version:R.version});if(dirty)flush()});
 
 document.getElementById("evid").innerHTML=EVID.map(t=>`<option value="${esc(t)}">`).join("");
 initStore();
