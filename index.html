@@ -159,6 +159,7 @@ body.adminmode .lock{background:var(--brand);color:#fff;border-color:var(--brand
   <span class="grow"></span>
   <span class="status" id="saveStatus"></span>
   <button id="lockBtn" class="lock" title="כניסת מנהל – צפייה בנתוני כל המשתמשים" style="display:none" aria-label="כניסת מנהל"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></button>
+  <button id="undoBtn" style="display:none" title="ביטול הפעולה האחרונה (Ctrl+Z)">↶ ביטול פעולה</button>
   <button id="exportBtn" class="primary" style="display:none">ייצוא ל-Excel</button>
 </header>
 <nav id="tabs"></nav>
@@ -314,9 +315,27 @@ function fallbackLocal(){
   try{const last=localStorage.getItem("mapplan.cur");if(last&&schools[last]&&last!==curId){openSchool(last)}}catch(e){}
 }
 function sortedIds(){return Object.keys(schools).sort((a,b)=>(schools[b].updatedAt||0)-(schools[a].updatedAt||0))}
-function openSchool(id,silent){curId=id;S=structuredClone(schools[id].data);S.prep=S.prep||[];S.map=S.map||{};S.custom=S.custom||[];S.snap=S.snap||{};S.zoneCh=S.zoneCh||{};S.plan=S.plan||[];S.align=S.align||{};try{localStorage.setItem("mapplan.cur",id)}catch(e){} if(!silent)renderAll()}
+function openSchool(id,silent){curId=id;S=structuredClone(schools[id].data);setTimeout(resetUndo,0);S.prep=S.prep||[];S.map=S.map||{};S.custom=S.custom||[];S.snap=S.snap||{};S.zoneCh=S.zoneCh||{};S.plan=S.plan||[];S.align=S.align||{};try{localStorage.setItem("mapplan.cur",id)}catch(e){} if(!silent)renderAll()}
 
-function touch(structural){if(viewOnly){S=structuredClone(viewOnly.data);renderView();toast("מצב צפייה בלבד – לא ניתן לערוך");return}dirty=true;lastEdit=Date.now();S.updatedAt=Date.now();setStatus("שומר…");clearTimeout(saveTimer);saveTimer=setTimeout(flush,1200);if(structural)renderView()}
+/* ---------- Undo: every change pushes the previous state; typing in one field within 1.5 s counts as one step ---------- */
+let undoStack=[],lastSnap=null,editGroup=null,lastGroup=null,lastGroupT=0;
+function resetUndo(){undoStack=[];lastSnap=S?JSON.stringify(S):null;lastGroup=null;updateUndoBtn()}
+function recordUndo(){
+  if(!S)return;const now=JSON.stringify(S);if(lastSnap===null){lastSnap=now;return}
+  if(now===lastSnap)return;
+  const same=editGroup&&editGroup===lastGroup&&Date.now()-lastGroupT<1500;
+  if(!same){undoStack.push(lastSnap);if(undoStack.length>200)undoStack.shift()}
+  lastSnap=now;lastGroup=editGroup;lastGroupT=Date.now();updateUndoBtn();
+}
+function updateUndoBtn(){const b=$("#undoBtn");if(!b)return;b.style.display=S&&!admin.on&&!viewOnly&&curId?"":"none";b.disabled=!undoStack.length;b.title=undoStack.length?`ביטול הפעולה האחרונה (Ctrl+Z) – ${undoStack.length} פעולות אפשר לבטל`:"אין פעולות לביטול"}
+function undo(){
+  if(!undoStack.length||!S||viewOnly){toast("אין פעולות לביטול");return}
+  const prev=undoStack.pop();S=JSON.parse(prev);lastSnap=prev;lastGroup=null;
+  dirty=true;lastEdit=Date.now();S.updatedAt=Date.now();clearTimeout(saveTimer);saveTimer=setTimeout(flush,600);setStatus("שומר…");
+  if(curId&&schools[curId]){schools[curId].name=S.name;schools[curId].year=S.year}
+  renderAll();toast("הפעולה בוטלה");
+}
+function touch(structural){if(viewOnly){S=structuredClone(viewOnly.data);renderView();toast("מצב צפייה בלבד – לא ניתן לערוך");return}recordUndo();dirty=true;lastEdit=Date.now();S.updatedAt=Date.now();setStatus("שומר…");clearTimeout(saveTimer);saveTimer=setTimeout(flush,1200);if(structural)renderView()}
 async function flush(){
   if(!S||!curId||viewOnly)return; if(saving){clearTimeout(saveTimer);saveTimer=setTimeout(flush,800);return}
   saving=true;dirty=false;const id=curId,data=structuredClone(S);
@@ -334,7 +353,7 @@ async function flush(){
 }
 async function createSchool(name,year){
   const id="s"+uid(),data=blankSchool(name,year);
-  schools[id]={name,year,updatedAt:data.updatedAt,data};curId=id;S=structuredClone(data);tab="prep";
+  schools[id]={name,year,updatedAt:data.updatedAt,data};curId=id;S=structuredClone(data);resetUndo();tab="prep";
   dirty=true;await flush();renderAll();
 }
 async function deleteSchool(){
@@ -364,7 +383,7 @@ function renderHeader(){
   const sel=$("#schoolSel"),ids=sortedIds();
   sel.innerHTML=ids.length?ids.map(id=>`<option value="${id}" ${id===curId?"selected":""}>${esc(schools[id].name)}${schools[id].year?" – "+esc(schools[id].year):""}</option>`).join(""):`<option>אין בתי ספר עדיין</option>`;
   sel.disabled=!ids.length;
-  $("#exportBtn").style.display=S&&!admin.on?"":"none";
+  $("#exportBtn").style.display=S&&!admin.on?"":"none";updateUndoBtn();
   ["#schoolSel","#newSchool"].forEach(q=>$(q).style.display=admin.on?"none":"");
 }
 function renderTabs(){
@@ -889,6 +908,8 @@ async function copyPlan(){
 
 /* ---------- Events ---------- */
 document.addEventListener("click",e=>{
+  editGroup=null;
+  if(e.target.closest("#undoBtn"))return undo();
   const t=e.target.closest("button,[data-toggle]");if(!t)return;const d=t.dataset;
   if(d.tab){tab=d.tab;renderTabs();renderView();scrollTo(0,0);return}
   if(t.id==="newSchool")return askNewSchool();
@@ -923,6 +944,7 @@ document.addEventListener("click",e=>{
 
 document.addEventListener("input",e=>{
   const t=e.target,d=t.dataset;
+  editGroup=(t.type==="checkbox"||t.tagName==="SELECT")?null:"f:"+JSON.stringify(d);
   if(t.id==="adminQ"){admin.q=t.value;const pos=t.selectionStart;renderView();const f=$("#adminQ");if(f){f.focus();f.setSelectionRange(pos,pos)}return}
   if(!S)return;
   if(d.prep!==undefined){S.prep[+d.prep][d.k]=t.value;return touch(false)}
@@ -945,6 +967,9 @@ document.addEventListener("change",e=>{
   if(t.dataset&&t.dataset.cfg){renderView();return}
   if(t.id==="schoolSel"){if(dirty)flush();openSchool(t.value);return}
   if(S&&t.dataset.prep!==undefined&&t.dataset.k==="stmt"){S.prep[+t.dataset.prep].stmt=t.value;touch(false)}
+});
+document.addEventListener("keydown",e=>{
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==="z"){const t=e.target;if(t.matches&&t.matches("input,textarea,select"))return;e.preventDefault();undo()}
 });
 window.addEventListener("beforeunload",()=>{if(dirty)flush()});
 
