@@ -175,6 +175,8 @@ body.remote #delSchool{display:none}
 
 .dotw{display:flex;flex-direction:column;align-items:center;gap:2px;flex:none;min-width:44px}
 .dotw small{font-size:10.5px;line-height:1;color:var(--muted);white-space:nowrap}
+
+.aib.improve{opacity:.9;border-color:#7c5cff;box-shadow:0 0 0 2px rgba(124,92,255,.15)}
 </style>
 </head>
 <body>
@@ -935,22 +937,28 @@ function fieldInfo(el){
   if(d.alignnote){const q=(el.closest(".check")||{}).textContent||"";return {field:"בדיקת הלימה – הערה לשאלה: "+q.trim().slice(0,120),guide:"הערה קצרה שבוחנת את התכנית מול השאלה, כולל הצעה לתיקון אם צריך.",focus:planAOA().slice(1).map(r=>r.join(" | ")).join("\n").slice(0,4000)}}
   return null;
 }
+const aiFilled=new Set();
+const aiKey=el=>JSON.stringify(Object.assign({},el.dataset));
+function setAiBtn(b,improve){b.textContent=improve?"💎":"✨";b.title=improve?"שיפור איכות הטקסט (מודל מדויק יותר)":"מילוי בעזרת בינה מלאכותית";b.classList.toggle("improve",!!improve)}
 function decorateAI(root){
   if(!aiOn())return;
   root.querySelectorAll("textarea[data-prep],textarea[data-map],input[data-map],textarea[data-zonech],textarea[data-snap],textarea[data-cell],input[data-alignnote],textarea[data-alignnote]").forEach(el=>{
     if(el.readOnly||el.parentElement.classList.contains("aiw"))return;
     const w=document.createElement("span");w.className="aiw";el.parentNode.insertBefore(w,el);w.appendChild(el);
-    const b=document.createElement("button");b.type="button";b.className="aib";b.title="מילוי בעזרת בינה מלאכותית";b.textContent="✨";w.appendChild(b);
+    const b=document.createElement("button");b.type="button";b.className="aib";w.appendChild(b);
+    setAiBtn(b,aiFilled.has(aiKey(el))&&el.value.trim());
   });
 }
 async function aiFill(btn){
   const el=btn.parentElement.querySelector("textarea,input");if(!el||!S)return;
   const info=fieldInfo(el);if(!info)return;
-  const prev=el.value;btn.disabled=true;btn.textContent="⏳";el.classList.add("aibusy");
+  const prev=el.value;const improve=btn.classList.contains("improve")&&prev.trim();
+  btn.disabled=true;btn.textContent="⏳";el.classList.add("aibusy");
   try{
     // short fields (tools, sources, who, when…) need little background → smaller, faster request
     const short=el.tagName==="INPUT"||["tools","sources","source","tool","who","due","owner","timeline","zone","component"].includes(el.dataset.k);
-    const body=JSON.stringify({field:info.field,guide:info.guide,focus:info.focus,context:short?schoolContext().slice(0,2500):schoolContext(),current:prev,short});
+    const guide=improve?"שפר את איכות הטקסט הקיים בשדה: ניסוח מקצועי, מדויק, בהיר ועשיר יותר, בעברית תקנית. שמור על כל התוכן והעובדות, אל תוסיף עובדות חדשות, והשאר [להשלים] היכן שחסר מידע. "+info.guide:info.guide;
+    const body=JSON.stringify({field:info.field,guide,focus:info.focus,context:short&&!improve?schoolContext().slice(0,2500):schoolContext(),current:prev,short:short&&!improve,quality:!!improve});
     let r,j;
     for(let attempt=0;attempt<4;attempt++){ // Google's free tier is sometimes briefly overloaded (503) – retry
       r=await fetch(REMOTE.url.replace(/\/$/,"")+"/functions/v1/ai-fill",{method:"POST",headers:Object.assign({apikey:REMOTE.key,"Content-Type":"application/json"},REMOTE.key.startsWith("eyJ")?{Authorization:"Bearer "+REMOTE.key}:{}),body});
@@ -961,9 +969,10 @@ async function aiFill(btn){
     }
     if(!r.ok||!j.text){const why=j.error==="rate_limit"?"הגעתם למגבלת השימוש החינמית – נסו שוב בעוד דקה":j.error==="missing_key"?"הבינה המלאכותית עדיין לא הוגדרה בשרת (חסר GEMINI_API_KEY)":r.status===401?"הבינה המלאכותית לא זמינה (401 – יש לכבות Verify JWT בפונקציה)":r.status===404?"הבינה המלאכותית לא זמינה (404 – הפונקציה ai-fill לא נמצאה)":(j.status===503?"השרת של Google עמוס כרגע – נסו שוב בעוד דקה":`הבינה המלאכותית לא זמינה כרגע (${r.status}${j.status?" / Google "+j.status:""})`);toast(why);if(j.detail)console.warn("ai-fill:",j.detail);return}
     if(j.model)console.info("ai-fill model:",j.model);el.value=j.text;el.dispatchEvent(new Event("input",{bubbles:true}));
-    toastUndo("הטקסט מולא בעזרת בינה מלאכותית – כדאי לעבור עליו",()=>{el.value=prev;el.dispatchEvent(new Event("input",{bubbles:true}))});
+    aiFilled.add(aiKey(el));
+    toastUndo(improve?"הטקסט שופר – כדאי לעבור עליו":"הטקסט מולא – לחיצה על 💎 תשפר את איכותו",()=>{el.value=prev;el.dispatchEvent(new Event("input",{bubbles:true}))});
   }catch(e){toast("אין חיבור לבינה המלאכותית כרגע")}
-  finally{btn.disabled=false;btn.textContent="✨";el.classList.remove("aibusy")}
+  finally{btn.disabled=false;setAiBtn(btn,aiFilled.has(aiKey(el))&&el.value.trim());el.classList.remove("aibusy")}
 }
 function toastUndo(msg,undo){document.querySelectorAll(".toast").forEach(x=>x.remove());const t=document.createElement("div");t.className="toast";t.innerHTML=`${esc(msg)} <button class="undo">ביטול</button>`;t.querySelector("button").onclick=()=>{undo();t.remove()};document.body.appendChild(t);setTimeout(()=>t.remove(),7000)}
 
@@ -1140,6 +1149,7 @@ document.addEventListener("click",e=>{
 
 document.addEventListener("input",e=>{
   const t=e.target,d=t.dataset;
+  if(t.parentElement&&t.parentElement.classList.contains("aiw")&&!t.value.trim()){aiFilled.delete(aiKey(t));const b=t.parentElement.querySelector(".aib");if(b)setAiBtn(b,false)}
   editGroup=(t.type==="checkbox"||t.tagName==="SELECT")?null:"f:"+JSON.stringify(d);
   if(t.id==="adminQ"){admin.q=t.value;const pos=t.selectionStart;renderView();const f=$("#adminQ");if(f){f.focus();f.setSelectionRange(pos,pos)}return}
   if(!S)return;
