@@ -157,6 +157,19 @@ body.remote #delSchool{display:none}
 .schoolgrid button:hover{background:var(--brand-soft)}
 .admtbl input{width:100%}
 .admtbl .newrow td{background:var(--brand-soft)}
+
+/* three core zones – each with its own color */
+.zonetabs{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.zt{--zc:#5b4bc4;--zs:#efedfb;flex:1 1 230px;display:flex;align-items:center;gap:6px;padding:12px 16px;border-radius:12px;border:2px solid var(--zc);background:var(--zs);color:var(--zc);font-size:16px;font-weight:700;text-align:right}
+.zt1{--zc:#0f8a6c;--zs:#e3f5ef}
+.zt2{--zc:#c2580a;--zs:#fdeee2}
+.zt .zn{font-weight:800;white-space:nowrap}
+.zt .zl{flex:1}
+.zt .zc{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:#fff;color:var(--zc);border:1px solid var(--zc);white-space:nowrap}
+.zt:hover{filter:brightness(.97);border-color:var(--zc)}
+.zt.on{background:var(--zc);color:#fff;box-shadow:0 3px 10px rgba(0,0,0,.15)}
+.zt.on .zc{background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.6)}
+@media (prefers-color-scheme: dark){.zt{--zs:#23213a}.zt1{--zs:#16302a}.zt2{--zs:#3a2618}.zt0{--zc:#9d90ff}.zt1{--zc:#4fd1ab}.zt2{--zc:#f59a52}.zt .zc{background:transparent}}
 </style>
 </head>
 <body>
@@ -458,7 +471,7 @@ function viewMap(){
   <div class="tip" style="margin-top:12px"><b>מחוון:</b> 1 כלל לא · 2 במידה מועטה · 3 במידה בינונית · 4 במידה רבה · 5 במידה רבה מאוד.
   <br><b>בזירות הצוות החינוכי והוראה-למידה-הערכה</b> יש לחלק מההיגדים שני ציונים: הראשון – מידת הביסוס בצוות השפה; השני – מידת ההעברה, ההתאמה והיישום בצוותים, שכבות ותחומי דעת נוספים (מצב כללי של בית הספר). כל ציון מבוסס על עדויות מהאוכלוסייה הרלוונטית.
   <br><b>כשיש מחלוקת:</b> על אילו עדויות כל אחד מסתמך? האם ההיגד מפורש באותו אופן? קיום הפעולה או איכותה? נקודתי או שגרה? הערכת המצב או הדחיפות?</div></div>
-  <div class="row" style="margin-bottom:12px">${CORE.map(z=>{const it=all.filter(o=>o.zone===z);const n=it.filter(isScored).length;return `<button data-mapzone="${z}" class="${mapZone===z?"primary":""}">${ZONES[z]} <span class="pill">${n}/${it.length}</span></button>`}).join("")}</div>`;
+  <div class="zonetabs">${CORE.map(z=>{const it=all.filter(o=>o.zone===z);const n=it.filter(isScored).length;return `<button data-mapzone="${z}" class="zt zt${z} ${mapZone===z?"on":""}"><span class="zn">זירה ${z+1}:</span> <span class="zl">${ZONES[z]}</span> <span class="zc">${n}/${it.length}</span></button>`}).join("")}</div>`;
   const z=mapZone;
   COMPS.filter(c=>c.zone===z).forEach(c=>{
     const items=all.filter(o=>o.zone===z&&o.comp===c.comp);
