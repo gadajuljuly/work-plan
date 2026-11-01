@@ -177,6 +177,11 @@ body.remote #delSchool{display:none}
 .dotw small{font-size:10.5px;line-height:1;color:var(--muted);white-space:nowrap}
 
 .aib.improve{opacity:.9;border-color:#7c5cff;box-shadow:0 0 0 2px rgba(124,92,255,.15)}
+
+.sumhead{display:flex;gap:8px;align-items:flex-end;margin:4px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.sumhead .sh0{width:230px;flex:none}
+.sumhead .sh{flex:1;font-size:12.5px;font-weight:700;color:var(--brand);line-height:1.35}
+@media (max-width:760px){.sumhead .sh0{display:none}}
 </style>
 </head>
 <body>
@@ -536,10 +541,11 @@ function viewSnap(){
     const rows=COMPS.filter(c=>c.zone===z).map(c=>{const it=all.filter(o=>o.zone===z&&o.comp===c.comp);
       const gB=avg(it.map(o=>S.map[o.id]&&!o.naB?S.map[o.id].score:null).filter(v=>v>0));
       const gA=TWO_SCORE(z)?avg(it.map(o=>S.map[o.id]&&!o.naA?S.map[o.id].scoreA:null).filter(v=>v>0)):null;
-      return `<div class="row" style="margin-bottom:4px"><span style="width:230px;font-size:14px">${esc(c.comp)}</span>${TWO_SCORE(z)?`<span class="status" style="width:70px">צוות השפה</span>${bar(gA)}`:""}<span class="status" style="width:70px">בית הספר</span>${bar(gB)}</div>`}).join("");
+      return `<div class="row" style="margin-bottom:4px"><span style="width:230px;font-size:14px">${esc(c.comp)}</span>${TWO_SCORE(z)?`<span class="status" style="width:70px">צוות השפה</span>${bar(gA)}`:`<span style="width:70px"></span><div style="flex:1;min-width:80px"></div><b style="width:36px"></b>`}<span class="status" style="width:70px">בית הספר</span>${bar(gB)}</div>`}).join("");
     return `<div style="margin-bottom:14px"><h3>${ZONES[z]}</h3>${rows}</div>`}).join("");
   return `<div class="card"><h2>ריכוז זירות – מציונים לתמונת מצב</h2>
-   <p class="lead">ממוצע הניקוד לכל רכיב (סולם 1–5, ללא היגדים שסומנו "אין מספיק מידע").</p>${summary}</div>
+   <p class="lead">ממוצע הניקוד לכל רכיב (סולם 1–5, ללא היגדים שסומנו "אין מספיק מידע").</p>
+   <div class="sumhead"><span class="sh0"></span><span class="sh">ניקוד מצב קיים<br>בהקשר של צוות השפה של תמקין&#92;קלם</span><span class="sh">ניקוד המבטא מצב עדכני כללי של בית הספר בתחום</span></div>${summary}</div>
   <div class="card"><div class="grid2">
     <div><h3>כוחות שאפשר להישען עליהם (4–5)</h3>${strengths.length?`<ul>${strengths.map(li).join("")}</ul>`:`<p class="status">אין עדיין</p>`}</div>
     <div><h3>פערים (1–2)</h3>${gaps.length?`<ul>${gaps.map(li).join("")}</ul>`:`<p class="status">אין עדיין</p>`}
