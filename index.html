@@ -191,15 +191,15 @@ body.remote #delSchool{display:none}
 .ztag{font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px;color:#fff;background:#5b4bc4;white-space:nowrap}
 .ztag.zt1{background:#f5c400;color:#3d2e00}.ztag.zt2{background:#c2580a}.ztag.zt-1{display:none}
 
-.schoolbox{display:flex;flex-direction:column;align-items:stretch;gap:1px}
-.schoolbox .author{align-self:flex-end;font-size:10.5px;color:var(--muted);line-height:1;padding-inline-end:4px;letter-spacing:.2px}
+.schoolbox{display:flex;align-items:flex-start;gap:6px}
+.schoolbox .author{font-size:10.5px;color:var(--muted);line-height:1;white-space:nowrap;padding-top:2px}
 @media print{.author{display:none !important}}
 </style>
 </head>
 <body>
 <header>
   <h1>מיפוי ותכנית עבודה בית ספרית</h1>
-  <div class="schoolbox"><small class="author">גאדה ג'לג'ולי</small><select id="schoolSel" aria-label="בית ספר"></select></div>
+  <div class="schoolbox"><select id="schoolSel" aria-label="בית ספר"></select><small class="author">גאדה ג'לג'ולי</small></div>
   <button id="newSchool">+ בית ספר חדש</button>
   <span class="grow"></span>
   <span class="status" id="saveStatus"></span>
