@@ -182,6 +182,8 @@ body.remote #delSchool{display:none}
 .sumhead .sh0{width:230px;flex:none}
 .sumhead .sh{flex:1;font-size:12.5px;font-weight:700;color:var(--brand);line-height:1.35}
 @media (max-width:760px){.sumhead .sh0{display:none}}
+
+.dot.na{background:transparent;border:1px dashed var(--line);color:var(--muted);font-size:10px;font-weight:500}
 </style>
 </head>
 <body>
@@ -283,11 +285,13 @@ function valsOf(o){const m=S.map[o.id];if(!m)return [];return keysOf(o).map(k=>m
 function lowOf(o){const v=valsOf(o).filter(x=>x>0);return v.length?Math.min(...v):null}
 function isScored(o){return valsOf(o).length>0}
 function scoreDots(o,m){
+  // always two slots, same order everywhere: right = מצב קיים, left = מצב עדכני
   m=m||{};
   const one=(k,lbl)=>{const v=m[k];return `<span class="dotw"><small>${lbl}</small><span class="dot ${v?"s"+v:""}" title="${lbl}">${v==null?"–":v===0?"?":v}</span></span>`};
-  const empty=`<span class="dotw"></span>`;
-  if(!TWO_SCORE(o.zone))return empty+one("score","ניקוד");
-  return (o.naA?empty:one("scoreA","מצב קיים"))+(o.naB?empty:one("score","מצב עדכני"));
+  const na=lbl=>`<span class="dotw"><small>${lbl}</small><span class="dot na" title="${lbl}: לא רלוונטי">ל״ר</span></span>`;
+  const A=!TWO_SCORE(o.zone)||o.naA?na("מצב קיים"):one("scoreA","מצב קיים");
+  const B=TWO_SCORE(o.zone)&&o.naB?na("מצב עדכני"):one("score","מצב עדכני");
+  return A+B;
 }
 function avg(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:null}
 function scoreText(o){const m=S.map[o.id]||{};return keysOf(o).map(k=>m[k]==null?"":(keysOf(o).length>1?(k==="scoreA"?"צוות השפה: ":"בית הספר: "):"")+(m[k]?m[k]+" – ":"")+SCORE_LABEL[m[k]]).filter(Boolean).join(" | ")}
