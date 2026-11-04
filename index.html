@@ -194,6 +194,11 @@ body.remote #delSchool{display:none}
 .schoolbox{display:flex;align-items:center;gap:8px}
 .schoolbox .author{font-size:12px;font-weight:700;color:var(--ink);line-height:1;white-space:nowrap}
 @media print{.author{display:none !important}}
+
+.formbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.resetbtn{color:var(--bad);border-color:var(--bad);background:var(--card);font-weight:600}
+.resetbtn:hover{background:var(--bad-soft);border-color:var(--bad)}
+@media print{.formbar{display:none}}
 </style>
 </head>
 <body>
@@ -465,7 +470,8 @@ function renderView(){
   if(tab==="guide"){v.innerHTML=viewGuide();return}
   if(!S&&store.mode==="remote"){v.innerHTML=viewPick();return}
   if(!S){v.innerHTML=`<div class="card welcome"><h2>ברוכים הבאים</h2><p class="lead">האפליקציה מלווה את התהליך מהמיפוי ועד תכנית העבודה:<br>היערכות ← מיפוי וניקוד ← תמונת מצב ובחירת היגדים ← תכנית עבודה ← בדיקת הלימה.</p><button class="primary" onclick="askNewSchool()">+ התחלת מיפוי לבית ספר חדש</button></div>`;return}
-  v.innerHTML=banner+{prep:viewPrep,map:viewMap,snap:viewSnap,plan:viewPlan,align:viewAlign}[tab]();
+  const formbar=!viewOnly&&curId?`<div class="formbar"><span class="status">${esc(S.name||"")}${S.year?" · "+esc(S.year):""}</span><span class="grow"></span><button id="resetForm" class="resetbtn" title="מחיקת כל מה שנכתב בטופס של בית הספר והתחלה מחדש">⟲ איפוס הטופס</button></div>`:"";
+  v.innerHTML=banner+formbar+{prep:viewPrep,map:viewMap,snap:viewSnap,plan:viewPlan,align:viewAlign}[tab]();
   if(viewOnly){v.querySelectorAll("textarea,input[type=text],input:not([type])").forEach(x=>x.readOnly=true);v.querySelectorAll("select,input[type=checkbox]").forEach(x=>x.disabled=true);v.querySelectorAll("#addPrep,#addPrepEx,[data-delprep],[data-addcustom],[data-delcustom],#addPlan,[data-addsub],[data-delrow],[data-reset],#delSchool,#unhide,#toPlan").forEach(x=>x.style.display="none")}
   decorateAI(v);
   if(tab==="plan")autosize(v);
@@ -1219,6 +1225,20 @@ document.addEventListener("click",e=>{
   if(d.reset){const r=S.plan.find(x=>x.id===d.reset);if(r){delete r.ov[d.k];touch(true)}return}
   if(t.id==="unhide"){cfg().hidden=[];touch(true);return}
   if(t.id==="toggleDesc"){showDesc=!showDesc;renderView();return}
+  if(t.id==="resetForm"){
+    modal(`<h3>⟲ איפוס הטופס של "${esc(S.name)}"?</h3>
+      <p>כל מה שנכתב יימחק: היערכות, ניקוד ועדויות במיפוי, תמונת מצב, בחירת היגדים, תכנית העבודה ובדיקת ההלימה.</p>
+      <p><b>שימו לב:</b> הטופס משותף לכל צוות בית הספר – האיפוס יחול אצל כולם.</p>
+      <p class="status">אם התחרטתם מיד, אפשר לבטל עם הכפתור "↶ ביטול פעולה" כל עוד הדף פתוח.</p>
+      <label class="row" style="margin-top:8px"><input type="checkbox" id="mResetOk"> אני מבין/ה – לאפס הכול</label><div id="mResetErr" class="status" style="color:var(--bad)"></div>`,()=>{
+      if(!$("#mResetOk").checked){$("#mResetErr").textContent="יש לסמן את תיבת האישור";return false}
+      const keep={name:S.name,year:S.year};const fresh=blankSchool(keep.name,keep.year);
+      Object.keys(S).forEach(k=>delete S[k]);Object.assign(S,fresh);
+      openStmts.clear();aiFilled.clear();tab="prep";mapZone=0;
+      touch(true);renderAll();toast("הטופס אופס – אפשר להתחיל מחדש");
+    });
+    return;
+  }
   if(t.id==="delSchool"){modal(`<h3>למחוק את "${esc(S.name)}"?</h3><p>כל המיפוי והתכנית של בית ספר זה יימחקו לצמיתות.</p>`,()=>{deleteSchool()});return}
 });
 
