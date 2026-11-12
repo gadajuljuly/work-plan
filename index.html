@@ -991,6 +991,7 @@ async function aiFill(btn){
     // short fields (tools, sources, who, when…) need little background → smaller, faster request
     const short=el.tagName==="INPUT"||["tools","sources","source","tool","who","due","owner","timeline","zone","component"].includes(el.dataset.k);
     const guide=improve?"שפר את איכות הטקסט הקיים בשדה: ניסוח מקצועי, מדויק, בהיר ועשיר יותר, בעברית תקנית. שמור על כל התוכן והעובדות, אל תוסיף עובדות חדשות, והשאר [להשלים] היכן שחסר מידע. "+info.guide:info.guide;
+    const t0=performance.now();let tFirst=0;
     const body=JSON.stringify({field:info.field,guide,focus:info.focus,context:short&&!improve?schoolContext().slice(0,2500):schoolContext(),current:prev,short:short&&!improve,quality:!!improve,stream:true});
     let r,j={},streamed=null;
     const clean=t=>t.replace(/\*\*/g,"").replace(/^#+\s*/gm,"");
@@ -1005,6 +1006,7 @@ async function aiFill(btn){
             if(!line.startsWith("data:"))continue;
             try{const ev=JSON.parse(line.slice(5));(ev.candidates?.[0]?.content?.parts||[]).forEach(pt=>{if(pt.text&&!pt.thought)acc+=pt.text})}catch(e){}
           }
+          if(!tFirst&&acc)tFirst=performance.now();
           el.value=clean(acc);if(el.tagName==="TEXTAREA"&&el.closest(".xplan")){el.style.height="auto";el.style.height=Math.max(el.scrollHeight,40)+"px"}
         }
         streamed=clean(acc).trim();j={text:streamed};break;
@@ -1018,7 +1020,9 @@ async function aiFill(btn){
     if(!j.text){const why=j.error==="rate_limit"?"הגעתם למגבלת השימוש החינמית – נסו שוב בעוד דקה":j.error==="missing_key"?"הבינה המלאכותית עדיין לא הוגדרה בשרת (חסר GEMINI_API_KEY)":r.status===401?"הבינה המלאכותית לא זמינה (401 – יש לכבות Verify JWT בפונקציה)":r.status===404?"הבינה המלאכותית לא זמינה (404 – הפונקציה ai-fill לא נמצאה)":(j.status===503?"השרת של Google עמוס כרגע – נסו שוב בעוד דקה":`הבינה המלאכותית לא זמינה כרגע (${r.status}${j.status?" / Google "+j.status:""})`);toast(why);if(j.detail)console.warn("ai-fill:",j.detail);return}
     if(j.model)console.info("ai-fill model:",j.model);el.value=j.text;el.dispatchEvent(new Event("input",{bubbles:true}));
     aiFilled.add(aiKey(el));
-    toastUndo(improve?"הטקסט שופר – כדאי לעבור עליו":"הטקסט מולא – לחיצה על 💎 תשפר את איכותו",()=>{el.value=prev;el.dispatchEvent(new Event("input",{bubbles:true}))});
+    const secs=((performance.now()-t0)/1000).toFixed(1),first=tFirst?((tFirst-t0)/1000).toFixed(1):null;
+    const timing=first?` · התחיל להופיע אחרי ${first} שנ׳, הסתיים אחרי ${secs} שנ׳`:` · ${secs} שנ׳ (ללא הופעה הדרגתית)`;
+    toastUndo((improve?"הטקסט שופר – כדאי לעבור עליו":"הטקסט מולא – לחיצה על 💎 תשפר את איכותו")+timing,()=>{el.value=prev;el.dispatchEvent(new Event("input",{bubbles:true}))});
   }catch(e){toast("אין חיבור לבינה המלאכותית כרגע")}
   finally{btn.disabled=false;setAiBtn(btn,aiFilled.has(aiKey(el))&&el.value.trim());el.classList.remove("aibusy")}
 }
